@@ -3,6 +3,12 @@
   gather_facts: no
   vars:
     metadata: "{{ lookup('file', 'metadata.xml') }}"
+    keycloak_url: https://lb.itix.lab/auth
+    keycloak_password: secret
+    keycloak_admin: admin
+    keycloak_target_realm: Amft
+    keycloak_validate_certs: no
+    client_id: CFT01
   tasks:
   - name: extract NameIDFormat
     xml:
@@ -59,26 +65,30 @@
   - debug:
       var: certificate
 
-  - shell: echo '{{ certificate }}' | base64 -d | openssl x509 -inform der
-    register: openssl
-
   - set_fact:
-      x509_certificate: '{{ openssl.stdout }}'
+      x509_certificate: |
+        -----BEGIN CERTIFICATE-----
+        {{ base64 }}
+        -----END CERTIFICATE-----
+    vars:
+      base64: "{{ certificate | regex_findall('.{1,64}') | join('\n') }}"
+  - debug:
+      var: x509_certificate
 
   - name: Create Keycloak Client
     community.general.keycloak_client:
-      auth_keycloak_url: https://lb.itix.lab/auth
-      auth_password: secret
+      auth_keycloak_url: '{{ keycloak_url }}'
+      auth_password: '{{ keycloak_password }}'
       auth_realm: master
-      auth_username: admin
-      validate_certs: no
+      auth_username: '{{ keycloak_admin }}'
+      validate_certs: '{{ keycloak_validate_certs | default("yes") | bool }}'
       protocol: saml
-      realm: Amft
-      client_id: '{{ cft_client }}'
+      realm: '{{ keycloak_target_realm }}'
+      client_id: '{{ client_id }}'
       attributes:
         saml.signing.certificate: '{{ x509_certificate }}'
         saml_assertion_consumer_url_post: '{{ acs }}'
         saml_single_logout_service_url_post: '{{ sls }}'
         saml_name_id_format: unspecified
-    vars:
-      cft_client: CFT01
+      redirect_uris:
+      - '{{ acs }}'
