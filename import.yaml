@@ -1,0 +1,84 @@
+- name: Import SAMLv2 Metadata in Keycloak
+  hosts: localhost
+  gather_facts: no
+  vars:
+    metadata: "{{ lookup('file', 'metadata.xml') }}"
+  tasks:
+  - name: extract NameIDFormat
+    xml:
+        xmlstring: '{{ metadata }}'
+        content: "text"
+        xpath: "/md:EntityDescriptor/md:SPSSODescriptor/md:NameIDFormat"
+        namespaces:
+          md: urn:oasis:names:tc:SAML:2.0:metadata
+    register: data
+  - set_fact:
+      nif: "{{ (data.matches[0]|dict2items|first).value }}"
+  - debug:
+      var: nif
+
+  - name: extract AssertionConsumerService
+    xml:
+        xmlstring: '{{ metadata }}'
+        content: "attribute"
+        xpath: "/md:EntityDescriptor/md:SPSSODescriptor/md:AssertionConsumerService"
+        attribute: Location
+        namespaces:
+          md: urn:oasis:names:tc:SAML:2.0:metadata
+    register: data
+  - set_fact:
+      acs: "{{ (data.matches[0]|dict2items|first).value.Location }}"
+  - debug:
+      var: acs
+
+  - name: extract SingleLogoutService
+    xml:
+        xmlstring: '{{ metadata }}'
+        content: "attribute"
+        xpath: "/md:EntityDescriptor/md:SPSSODescriptor/md:SingleLogoutService"
+        attribute: Location
+        namespaces:
+          md: urn:oasis:names:tc:SAML:2.0:metadata
+    register: data
+  - set_fact:
+      sls: "{{ (data.matches[0]|dict2items|first).value.Location }}"
+  - debug:
+      var: sls
+
+  - name: extract certificate
+    xml:
+        xmlstring: '{{ metadata }}'
+        content: "text"
+        xpath: "/md:EntityDescriptor/md:SPSSODescriptor/md:KeyDescriptor/ds:KeyInfo/ds:X509Data/ds:X509Certificate"
+        namespaces:
+          md: urn:oasis:names:tc:SAML:2.0:metadata
+          ds: "http://www.w3.org/2000/09/xmldsig#"
+    register: data
+  - set_fact:
+      certificate: "{{ (data.matches[0]|dict2items|first).value }}"
+  - debug:
+      var: certificate
+
+  - shell: echo '{{ certificate }}' | base64 -d | openssl x509 -inform der
+    register: openssl
+
+  - set_fact:
+      x509_certificate: '{{ openssl.stdout }}'
+
+  - name: Create Keycloak Client
+    community.general.keycloak_client:
+      auth_keycloak_url: https://lb.itix.lab/auth
+      auth_password: secret
+      auth_realm: master
+      auth_username: admin
+      validate_certs: no
+      protocol: saml
+      realm: Amft
+      client_id: '{{ cft_client }}'
+      attributes:
+        saml.signing.certificate: '{{ x509_certificate }}'
+        saml_assertion_consumer_url_post: '{{ acs }}'
+        saml_single_logout_service_url_post: '{{ sls }}'
+        saml_name_id_format: unspecified
+    vars:
+      cft_client: CFT01
