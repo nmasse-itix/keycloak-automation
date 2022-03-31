@@ -19,9 +19,7 @@
           md: urn:oasis:names:tc:SAML:2.0:metadata
     register: data
   - set_fact:
-      nif: "{{ (data.matches[0]|dict2items|first).value }}"
-  - debug:
-      var: nif
+      nif: "{{ (data.matches[0]|dict2items|first).value.split(':')[-1] }}"
 
   - name: extract AssertionConsumerService
     xml:
@@ -34,8 +32,6 @@
     register: data
   - set_fact:
       acs: "{{ (data.matches[0]|dict2items|first).value.Location }}"
-  - debug:
-      var: acs
 
   - name: extract SingleLogoutService
     xml:
@@ -48,8 +44,6 @@
     register: data
   - set_fact:
       sls: "{{ (data.matches[0]|dict2items|first).value.Location }}"
-  - debug:
-      var: sls
 
   - name: extract certificate
     xml:
@@ -62,8 +56,6 @@
     register: data
   - set_fact:
       certificate: "{{ (data.matches[0]|dict2items|first).value }}"
-  - debug:
-      var: certificate
 
   - set_fact:
       x509_certificate: |
@@ -72,8 +64,6 @@
         -----END CERTIFICATE-----
     vars:
       base64: "{{ certificate | regex_findall('.{1,64}') | join('\n') }}"
-  - debug:
-      var: x509_certificate
 
   - name: Create Keycloak Client
     community.general.keycloak_client:
@@ -89,6 +79,6 @@
         saml.signing.certificate: '{{ x509_certificate }}'
         saml_assertion_consumer_url_post: '{{ acs }}'
         saml_single_logout_service_url_post: '{{ sls }}'
-        saml_name_id_format: unspecified
+        saml_name_id_format: '{{ nif }}'
       redirect_uris:
       - '{{ acs }}'
